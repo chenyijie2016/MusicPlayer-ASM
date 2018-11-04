@@ -98,10 +98,12 @@ s_fmt db '%',0,'s',0, 0, 0 ;"%s"
 d_fmt db '%', 0, 'd', 0, 0, 0
 noneplay_fmt db '%', 0, '.', 0, '2', 0, 'd', 0, ':', 0, '%', 0, '.', 0, '2', 0, 'd', 0, 0, 0 ;"%.2d:%.2d"
 startplay_fmt db '%', 0, 's', 0, '\', 0, '%', 0, 's', 0, 0, 0 ;"%s\\%s"
-stopplay_fmt db '0', 0, '0', 0, ':', 0, '0', 0, '0', 0, 0, 0;"00:00"
+;stopplay_fmt db '0', 0, '0', 0, ':', 0, '0', 0, '0', 0, 0, 0;"00:00"
+stopplay_fmt db '00:00', 0;"00:00"
 PROGRESSCLASS db "msctls_progress32",0
 LISTVIEWCLASS db "SysListView32",0
-music_file_error db 'O', 0, 'p', 0, 'e', 0, 'n', 0, ' ', 0, 'M', 0, 'u', 0, 's', 0, 'i', 0, 'c', 0, 'F', 0, 'i', 0, 'l', 0, 'e', 0, 'E', 0, 'r', 0, 'r', 0, 'o', 0, 'r', 0, '!', 0, 0, 0 ;"Open Music File Error!\r\nPlease Check the Media file!\r\nOr Your Audio decoder can not decode the file"
+;music_file_error db 'O', 0, 'p', 0, 'e', 0, 'n', 0, ' ', 0, 'M', 0, 'u', 0, 's', 0, 'i', 0, 'c', 0, 'F', 0, 'i', 0, 'l', 0, 'e', 0, 'E', 0, 'r', 0, 'r', 0, 'o', 0, 'r', 0, '!', 0, 0, 0 ;"Open Music File Error!\r\nPlease Check the Media file!\r\nOr Your Audio decoder can not decode the file"
+music_file_error db 'Open Music File Error!', 'Please Check the Media file!', 'Or Your Audio decoder can not decode the file', 0 ;"Open Music File Error!\r\nPlease Check the Media file!\r\nOr Your Audio decoder can not decode the file"
 
 text_static db "static",0
 text_0000 db "00:00",0
@@ -244,7 +246,7 @@ CreateWindowControl proc uses eax hWnd:HWND
 	invoke CreateWindowEx, 0, offset text_button, offset text_stop, 
 		WS_VISIBLE or WS_CHILD or BS_PUSHBUTTON,
 		0, 0, 0, 0,
-		hWnd, IDC_PLAYBTN, hInstance, NULL
+		hWnd, IDC_STOPBTN, hInstance, NULL
 	mov hStopBtn, eax
 
 	invoke SendMessage, hStopBtn, WM_SETFONT, hFont, NULL
@@ -495,7 +497,7 @@ handlePlay proc uses eax ebx ecx, hWnd:HWND
 	;invoke wsprintfW, addr Info, offset handle_play_fmt, count, mark
 	;invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
 
-	.if eax != LB_ERR
+	.if index != LB_ERR
 		.if status.playStatus == STOPSTATUS
 			mov ebx, offset Files
 			mov eax, sizeof FileInfo
@@ -553,6 +555,7 @@ L_while:
 		div ebx
 		invoke wsprintfW, addr currentTime, offset noneplay_fmt, eax, edx
 		invoke SetWindowTextW, hCurrentPlayTime, addr currentTime
+
 		mov eax, status.len
 		.if status.pos == eax
 			mov eax, STOPPLAY
@@ -567,8 +570,9 @@ L_while:
 		invoke mciSendCommandW, NULL, MCI_OPEN, MCI_OPEN_ELEMENT, addr mop
 		mov return, eax
 		.if return != 0
-			invoke wsprintfW, addr Info, offset music_file_error
-			invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
+			;invoke wsprintfW, addr Info, offset music_file_error
+			;invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
+			invoke SendMessage, hwndEdit, WM_SETTEXT, 0, offset music_file_error
 			ret
 		.endif
 
@@ -579,7 +583,23 @@ L_while:
 		invoke mciSendCommandW, mop.wDeviceID, MCI_STATUS, MCI_STATUS_ITEM, addr msp
 		mov eax, msp.dwReturn
 		mov status.len, eax
-		;SendMessage(hwndPB, PBM_SETRANGE, 0, MAKELPARAM(0, status.length / 100)) Д§З­вы
+
+		;((LONG)(((WORD)(((DWORD_PTR)(a)) & 0xffff)) | ((DWORD)((WORD)(((DWORD_PTR)(b)) & 0xffff))) << 16))
+		;SendMessage(hwndPB, PBM_SETRANGE, 0, MAKELPARAM(0, status.length / 100))
+		mov eax, status.len
+		mov ebx, 100
+		mov edx, 0
+		div ebx
+		and eax, 1111111111111111b
+		shl eax, 16
+		mov ebx, eax
+
+		mov eax, 0
+		and eax, 1111111111111111b
+
+		or eax, ebx
+		invoke SendMessage, hwndPB, PBM_SETRANGE, 0, eax
+
 		mov eax, status.len
 		mov ebx, 1000
 		mov edx, 0
@@ -603,10 +623,11 @@ L_while:
 		invoke mciSendCommandW, mop.wDeviceID, MCI_CLOSE, NULL, NULL
 		mov status.playStatus, STOPSTATUS
 		mov status.operation, NONEPLAY
-		invoke SetWindowTextW, hTotalPlayTime, offset stopplay_fmt
-		invoke SetWindowTextW, hCurrentPlayTime, offset stopplay_fmt
+		invoke SetWindowText, hTotalPlayTime, offset stopplay_fmt
+		invoke SetWindowText, hCurrentPlayTime, offset stopplay_fmt
 		invoke SetWindowText, hPlayBtn, offset text_play
 		invoke SendMessage, hwndPB, PBM_SETPOS, 0, 0
+		ret
 	.elseif status.operation == RESUMEPLAY
 		mov status.operation, NONEPLAY
 		mov status.playStatus, PLAYSTATUS
