@@ -92,7 +92,7 @@ text_browse_folder db "Browse folder", 0
 text_listbox db "listbox", 0
 
 
-find_dir_fmt db '%', 0, 's', 0, '\', '*',0, 0, 0; "%s\\*"
+find_dir_fmt db '%', 0, 's', 0, '\', 0, '*',0, 0, 0; "%s\\*"
 handle_play_fmt db 'C', 0, 'o', 0, 'u', 0, 'n', 0, 't', 0, '=', 0, '%', 0, 'd', 0, ' ', 0, 'M', 0, 'a', 0, 'r', 0, 'k', 0, '=', 0, '%', 0, 'd', 0, 0, 0;"Count=%d Mark=%d"
 s_fmt db '%',0,'s',0, 0, 0 ;"%s"
 d_fmt db '%', 0, 'd', 0, 0, 0
@@ -365,7 +365,7 @@ ReSizeWindowControl proc uses eax ebx hWnd:HWND
 	mov current_width, ebx ; current_width =  rc.right - rc.left
 	mov eax, current_width
 	mov ebx, 2
-	mov dx, 0
+	mov edx, 0
 	div ebx
 	mov middle, eax ;middle = current_width /2
 	sub middle, 30
@@ -470,7 +470,8 @@ SelectDir proc hWnd:HWND
 
 	cmp eax, 0 ; if lpDlist != NULL
 	;jnz returnselectdir
-	invoke SHGetPathFromIDList ,lpDlist, offset DIR
+	invoke SHGetPathFromIDListW ,lpDlist, offset DIR
+	;mov ecx, offset DIR
 returnselectdir:	
 	ret
 SelectDir endp
@@ -540,11 +541,14 @@ L_while:
 		mov eax, msp.dwReturn
 		mov status.pos, eax
 		mov ebx, 100
+		mov edx, 0
 		div ebx
 		invoke SendMessage, hwndPB, PBM_SETPOS, eax, 0
 		mov eax, status.pos
 		mov ebx, 1000
+		mov edx, 0
 		div ebx
+		mov edx, 0
 		mov ebx, 60
 		div ebx
 		invoke wsprintfW, addr currentTime, offset noneplay_fmt, eax, edx
@@ -559,14 +563,15 @@ L_while:
 		mov status.operation, NONEPLAY
 		invoke wsprintfW, addr cmd, offset startplay_fmt, offset DIR, addr status.filename
 		invoke SendMessage, hwndEdit, WM_SETTEXT, 0, addr cmd
+		mov ecx, offset cmd
 		mov mop.lpstrElementName, offset cmd
 		invoke mciSendCommandW, NULL, MCI_OPEN, MCI_OPEN_ELEMENT, addr mop
 		mov return, eax
-		;.if return != 0
-		;	invoke wsprintfW, addr Info, offset music_file_error
-		;	invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
-		;	ret
-		;.endif
+		.if return != 0
+			invoke wsprintfW, addr Info, offset music_file_error
+			invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
+			ret
+		.endif
 
 		mov mpp.dwFrom, 0
 		mov mpp.dwCallback, NULL
@@ -576,20 +581,22 @@ L_while:
 		mov eax, msp.dwReturn
 		mov status.len, eax
 		;SendMessage(hwndPB, PBM_SETRANGE, 0, MAKELPARAM(0, status.length / 100)) Д§З­вы
-		;mov eax, status.len
-		;mov ebx, 1000
-		;div ebx
-		;mov ebx, 60
-		;div ebx
-		;invoke wsprintfW, addr totalTime, offset noneplay_fmt, eax, edx
-		;invoke SetWindowTextW, hTotalPlayTime, addr totalTime
+		mov eax, status.len
+		mov ebx, 1000
+		mov edx, 0
+		div ebx
+		mov ebx, 60
+		mov edx, 0
+		div ebx
+		invoke wsprintfW, addr totalTime, offset noneplay_fmt, eax, edx
+		invoke SetWindowTextW, hTotalPlayTime, addr totalTime
 		mov status.playStatus, PLAYSTATUS
-		invoke SetWindowTextW, hPlayBtn, offset text_pause
+		invoke SetWindowText, hPlayBtn, offset text_pause
 
 	.elseif status.operation == PAUSEPLAY
 		mov status.operation, NONEPLAY
 		mov status.playStatus, PAUSESTATUS
-		invoke SetWindowTextW, hPlayBtn, offset text_resume
+		invoke SetWindowText, hPlayBtn, offset text_resume
 		invoke mciSendCommandW, mop.wDeviceID, MCI_PAUSE, 0, addr mpp
 	
 	.elseif status.operation == STOPPLAY
@@ -599,19 +606,19 @@ L_while:
 		mov status.operation, NONEPLAY
 		invoke SetWindowTextW, hTotalPlayTime, offset stopplay_fmt
 		invoke SetWindowTextW, hCurrentPlayTime, offset stopplay_fmt
-		invoke SetWindowTextW, hPlayBtn, offset text_play
+		invoke SetWindowText, hPlayBtn, offset text_play
 		invoke SendMessage, hwndPB, PBM_SETPOS, 0, 0
 	.elseif status.operation == RESUMEPLAY
 		mov status.operation, NONEPLAY
 		mov status.playStatus, PLAYSTATUS
-		invoke SetWindowTextW, hPlayBtn, offset text_pause
+		invoke SetWindowText, hPlayBtn, offset text_pause
 		invoke mciSendCommandW, mop.wDeviceID, MCI_RESUME, 0, addr mpp
 	.endif
 
 	invoke Sleep, 100
 	jmp L_while
 
-	;ret
+	ret
 Play endp
 
 
@@ -622,15 +629,19 @@ FindFile proc
 	local FileCount: DWORD
 	;local lvI:LVITEMW
 	local tempdir[260]:WCHAR
+
 	;invoke RtlZeroMemory, addr lvI, sizeof LVITEMW
 	invoke RtlZeroMemory,addr ffd,sizeof WIN32_FIND_DATA
+	invoke RtlZeroMemory, addr tempdir, sizeof tempdir
 	;mov lvI.pszText, LPSTR_TEXTCALLBACKW
 	;mov lvI._mask, LVIF_TEXT or LVIF_IMAGE or LVIF_STATE
 	invoke wsprintfW, addr tempdir, offset find_dir_fmt, offset DIR
-
-	invoke FindFirstFile, addr tempdir, addr ffd
+	invoke FindFirstFileW, addr tempdir, addr ffd
 	mov hFind, eax
-	.if eax == -1
+
+	invoke wsprintfW, addr Info, addr tempdir
+	invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
+	.if hFind == -1
 		ret ; error!
 	.endif
 	mov FileCount, 0
