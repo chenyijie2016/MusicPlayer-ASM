@@ -235,14 +235,17 @@ CreateWindowControl proc uses eax hWnd:HWND
 		hWnd, IDC_PLAYBTN, hInstance, NULL
 	mov hPlayBtn, eax
 
-	;创建stop按钮
-	;invoke CreateWindowEx, 0, offset text_button, offset text_stop, 
-		;WS_VISIBLE or WS_CHILD or BS_PUSHBUTTON,
-		;0, 0, 0, 0,
-		;hWnd, IDC_PLAYBTN, hInstance, NULL
-	;mov hPlayBtn, eax
-
 	invoke SendMessage, hPlayBtn, WM_SETFONT, hFont, NULL
+
+	;创建stop按钮
+	invoke CreateWindowEx, 0, offset text_button, offset text_stop, 
+		WS_VISIBLE or WS_CHILD or BS_PUSHBUTTON,
+		0, 0, 0, 0,
+		hWnd, IDC_PLAYBTN, hInstance, NULL
+	mov hStopBtn, eax
+
+	invoke SendMessage, hStopBtn, WM_SETFONT, hFont, NULL
+
 	; 创建进度条
 	invoke CreateWindowEx, 0, offset PROGRESSCLASS, NULL ,
 		WS_VISIBLE or WS_CHILD or PBS_SMOOTH,
@@ -362,6 +365,29 @@ ReSizeWindowControl proc uses eax ebx hWnd:HWND
 
 
 	invoke MoveWindow, hPlayBtn, middle, playBtn_bottom, 60, 30, TRUE
+
+	; 确定 stop 按钮的位置
+	mov eax, 0 
+	invoke GetClientRect, hWnd, addr rc
+	mov ebx, rc.right
+	sub ebx, rc.left
+	mov current_width, ebx ; current_width =  rc.right - rc.left
+	mov eax, current_width
+	mov ebx, 2
+	mov dx, 0
+	div ebx
+	mov middle, eax ;middle = current_width /2
+	sub middle, 95
+
+	mov ebx, rc.bottom
+	sub ebx, rc.top
+	mov current_height, ebx
+	mov eax, rc.bottom
+	mov playBtn_bottom, eax
+	sub playBtn_bottom, 40
+
+
+	invoke MoveWindow, hStopBtn, middle, playBtn_bottom, 60, 30, TRUE
 
 	; 确定进度条的位置
 	mov eax, rc.left
