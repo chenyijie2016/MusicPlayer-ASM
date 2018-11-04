@@ -527,6 +527,12 @@ Play proc uses eax ebx edx, lpParam: LPVOID
 	local msp:MCI_STATUS_PARMS
 	local currentTime[30]: WCHAR
 	local totalTime[30]: WCHAR
+
+
+	invoke RtlZeroMemory, addr mop, sizeof MCI_OPEN_PARMSW ;
+	invoke RtlZeroMemory, addr mpp, sizeof MCI_PLAY_PARMS ;
+	invoke RtlZeroMemory, addr msp, sizeof MCI_STATUS_PARMS ;
+
 L_while:
 	.if status.operation == NONEPLAY
 		mov msp.dwItem, MCI_STATUS_POSITION
