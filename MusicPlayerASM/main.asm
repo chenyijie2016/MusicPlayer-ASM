@@ -80,7 +80,7 @@ AppName db "MusicPlayer", 0
 szTextFileName db "FileName",0
 szTextFileSize db "FileSize",0
 
-fontname db 'C', 0, 'o', 0, 'n', 0, 's', 0, 'o', 0, 'l', 0, 'a', 0, 's', 0, 0, 0 ; Consolas
+fontname db 'Consolas', 0
 text_button db "button", 0
 text_play db "Play", 0
 text_stop db "Stop", 0
@@ -89,7 +89,7 @@ text_resume db "Resume", 0
 text_edit db "edit",0
 text_opendir db "Open Directory", 0
 text_browse_folder db "Browse folder", 0
-
+text_listbox db "listbox", 0
 
 
 find_dir_fmt db '%', 0, 's', 0, '\', '*',0, 0, 0; "%s\\*"
@@ -115,7 +115,7 @@ IDC_CURRENTPLAYTIME HMENU 209
 IDC_TOTALPLAYTIME HMENU 210
 IDC_STOPBTN HMENU 211
 IDC_PROGRESSBAR HMENU 212
-
+IDC_LIST HMENU 213
 .data?
 hInstance HINSTANCE ?
 CommandLine LPSTR ? 
@@ -130,8 +130,11 @@ hwndEdit HWND ?
 hStopBtn HWND ?
 hTotalPlayTime HWND ?
 hCurrentPlayTime HWND ?
+hList HWND ?
 
+; 当前目录
 DIR WCHAR 1024 DUP(0)
+; 提示信息
 Info WCHAR 2048 DUP(?)
 
 
@@ -221,7 +224,7 @@ CreateWindowControl proc uses eax hWnd:HWND
 ;------------------------------------------
 	local lvc:LVCOLUMN
 	; 创建字体
-	invoke CreateFontW , -15 , -8, 0, 0, 400,
+	invoke CreateFont, -15 , -8, 0, 0, 400,
 		FALSE, FALSE, FALSE, DEFAULT_CHARSET,
 		OUT_CHARACTER_PRECIS,CLIP_CHARACTER_PRECIS,
 		DEFAULT_QUALITY,FF_DONTCARE,
@@ -257,26 +260,37 @@ CreateWindowControl proc uses eax hWnd:HWND
 	mov hwndPB, eax
 
 	;创建listview
-	invoke CreateWindowEx, 0, offset LISTVIEWCLASS, NULL ,
-		WS_VISIBLE or WS_CHILD or LVS_REPORT or LVS_EDITLABELS,
+	;invoke CreateWindowEx, 0, offset LISTVIEWCLASS, NULL ,
+	;	WS_VISIBLE or WS_CHILD or LVS_REPORT or LVS_EDITLABELS,
+	;	0, 0, 0, 0,
+	;	hWnd,
+	;	IDC_LISTVIEW,
+	;	hInstance,
+	;	NULL
+	;mov hListView, eax
+	;mov lvc.mask,  01111b
+	;mov lvc._mask, 1111b
+	;mov lvc.iSubItem, 0
+	;mov lvc.pszText, offset szTextFileName
+	;mov lvc._cx, 350
+
+	;invoke SendMessage, hListView, LVM_INSERTCOLUMN, 0, addr lvc
+	;mov lvc.iSubItem, 1 
+	;mov lvc.pszText, offset szTextFileSize
+	;mov lvc._cx, 100
+	;invoke SendMessage, hListView, LVM_INSERTCOLUMN, 1, addr lvc
+	
+	;创建ListBox
+	invoke CreateWindowEx, 0, offset text_listbox, NULL ,
+		WS_VISIBLE or WS_CHILD or LBS_STANDARD,
 		0, 0, 0, 0,
 		hWnd,
-		IDC_LISTVIEW,
+		IDC_LIST,
 		hInstance,
 		NULL
-	mov hListView, eax
-	;mov lvc.mask,  01111b
-	mov lvc._mask, 1111b
-	mov lvc.iSubItem, 0
-	mov lvc.pszText, offset szTextFileName
-	mov lvc._cx, 350
+	mov hList, eax
+	invoke SendMessage, hList, WM_SETFONT, hFont, NULL
 
-	invoke SendMessage, hListView, LVM_INSERTCOLUMN, 0, addr lvc
-	mov lvc.iSubItem, 1 
-	mov lvc.pszText, offset szTextFileSize
-	mov lvc._cx, 100
-	invoke SendMessage, hListView, LVM_INSERTCOLUMN, 1, addr lvc
-	
 
 	;创建打开文件按钮
 	invoke CreateWindowEx, 0, offset text_button, offset text_opendir, 
@@ -402,7 +416,7 @@ ReSizeWindowControl proc uses eax ebx hWnd:HWND
 
 	invoke MoveWindow, hwndPB, pb_left, pb_bottom, pb_width, 15, TRUE
 
-	;确定ListView 的位置
+	;确定ListBox 的位置
 	mov eax, rc.left
 	add eax, 20
 	mov lv_left, eax
@@ -416,7 +430,7 @@ ReSizeWindowControl proc uses eax ebx hWnd:HWND
 	sub eax, 250
 	mov lv_height, eax
 
-	invoke MoveWindow, hListView, lv_left, lv_top, lv_width, lv_height, TRUE
+	invoke MoveWindow, hList, lv_left, lv_top, lv_width, lv_height, TRUE
 
 	; 确定打开文件夹按钮位置
 
@@ -464,28 +478,33 @@ SelectDir endp
 
 
 handlePlay proc uses eax ebx ecx, hWnd:HWND 
-	local count: dword
-	local mark: dword
+	;local count: dword
+	;local mark: dword
+	local index:dword
 	local ThreadID: dword
 	local handle: HANDLE
-	invoke SendMessage, hListView, LVM_GETSELECTEDCOUNT, 0, 0
-	mov count, eax
-	invoke SendMessage, hListView, LVM_GETSELECTIONMARK, 0, 0
-	mov mark, eax
+	;invoke SendMessage, hListView, LVM_GETSELECTEDCOUNT, 0, 0
+	;mov count, eax
+	;invoke SendMessage, hListView, LVM_GETSELECTIONMARK, 0, 0
+	;mov mark, eax
 
-	invoke wsprintfW, addr Info, offset handle_play_fmt, count, mark
-	invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
+	invoke SendMessage, hList, LB_GETCURSEL, 0, 0
+	mov index, eax
 
-	.if count == 1
+	;invoke wsprintfW, addr Info, offset handle_play_fmt, count, mark
+	;invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
+
+	.if eax != LB_ERR
 		.if status.playStatus == STOPSTATUS
 			mov ebx, offset Files
 			mov eax, sizeof FileInfo
-			mul mark
+			mul index
 			add ebx, eax
 			assume ebx:PTR FileInfo
 
 			mov status.operation, STARTPLAY
-			invoke wcscpy, offset status.filename, [ebx].filename
+			invoke wsprintfW, addr status.filename, offset s_fmt ,addr [ebx].filename
+			;invoke wcscpy, offset status.filename, [ebx].filename
 			invoke CreateThread, NULL, 0, Play, NULL, 0, addr ThreadID
 			mov handle, eax
 			assume ebx:nothing
@@ -532,16 +551,16 @@ L_while:
 
 	.elseif status.operation == STARTPLAY
 		mov status.operation, NONEPLAY
-		invoke wsprintfW, addr cmd, offset startplay_fmt, offset DIR, status.filename
+		invoke wsprintfW, addr cmd, offset startplay_fmt, offset DIR, addr status.filename
 		invoke SendMessage, hwndEdit, WM_SETTEXT, 0, addr cmd
 		mov mop.lpstrElementName, offset cmd
 		invoke mciSendCommandW, NULL, MCI_OPEN, MCI_OPEN_ELEMENT, addr mop
 		mov return, eax
-		.if return != 0
-			invoke wsprintfW, addr Info, offset music_file_error
-			invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
-			ret
-		.endif
+		;.if return != 0
+		;	invoke wsprintfW, addr Info, offset music_file_error
+		;	invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
+		;	ret
+		;.endif
 
 		mov mpp.dwFrom, 0
 		mov mpp.dwCallback, NULL
@@ -551,13 +570,13 @@ L_while:
 		mov eax, msp.dwReturn
 		mov status.len, eax
 		;SendMessage(hwndPB, PBM_SETRANGE, 0, MAKELPARAM(0, status.length / 100)) 待翻译
-		mov eax, status.len
-		mov ebx, 1000
-		div ebx
-		mov ebx, 60
-		div ebx
-		invoke wsprintfW, addr totalTime, offset noneplay_fmt, eax, edx
-		invoke SetWindowTextW, hTotalPlayTime, addr totalTime
+		;mov eax, status.len
+		;mov ebx, 1000
+		;div ebx
+		;mov ebx, 60
+		;div ebx
+		;invoke wsprintfW, addr totalTime, offset noneplay_fmt, eax, edx
+		;invoke SetWindowTextW, hTotalPlayTime, addr totalTime
 		mov status.playStatus, PLAYSTATUS
 		invoke SetWindowTextW, hPlayBtn, offset text_pause
 
@@ -595,12 +614,12 @@ FindFile proc
 	local ffd: WIN32_FIND_DATA
 	local hFind: HANDLE
 	local FileCount: DWORD
-	local lvI:LVITEMW
+	;local lvI:LVITEMW
 	local tempdir[260]:WCHAR
-	invoke RtlZeroMemory, addr lvI, sizeof LVITEMW
+	;invoke RtlZeroMemory, addr lvI, sizeof LVITEMW
 	invoke RtlZeroMemory,addr ffd,sizeof WIN32_FIND_DATA
-	mov lvI.pszText, LPSTR_TEXTCALLBACKW
-	mov lvI._mask, LVIF_TEXT or LVIF_IMAGE or LVIF_STATE
+	;mov lvI.pszText, LPSTR_TEXTCALLBACKW
+	;mov lvI._mask, LVIF_TEXT or LVIF_IMAGE or LVIF_STATE
 	invoke wsprintfW, addr tempdir, offset find_dir_fmt, offset DIR
 
 	invoke FindFirstFile, addr tempdir, addr ffd
@@ -611,6 +630,7 @@ FindFile proc
 	mov FileCount, 0
 
 	invoke SendMessage, hwndEdit, WM_SETTEXT, 0, addr tempdir
+	invoke SendMessage, hList, LB_RESETCONTENT, 0, 0
 
 	do_start:
 		mov eax, ffd.dwFileAttributes
@@ -626,6 +646,7 @@ FindFile proc
 		mov ebx, offset Files
 		add ebx, eax
 		invoke wsprintfW, addr [ebx].filename, offset s_fmt, addr ffd.cFileName
+		invoke SendMessageW, hList, LB_INSERTSTRING, FileCount, addr ffd.cFileName
 
 		mov eax, ffd.nFileSizeHigh
 		mov [ebx].filesize.HighPart, eax
@@ -639,48 +660,9 @@ FindFile proc
 		jnz do_start
 
 
-
-	invoke SendMessage, hListView, LVM_DELETEALLITEMS, 0, 0
-	mov ecx, 0
-	
-	.while ecx < FileCount
-		inc lvI.iItem
-		push lvI.iItem
-		pop lvI.lParam
-		inc ecx
-		push ecx
-		invoke SendMessage, hListView, LVM_INSERTITEM, 0, addr lvI
-		pop ecx
-	.endw
-
 	ret
 FindFile endp
 
-handleListViewNotify proc lParam:LPARAM
-	mov edx, lParam
-	assume edx:PTR NMHDR
-		; TODO:
-		; 下面的代码还有bug 希望参照解决
-		.if [edx].code == LVN_GETDISPINFO
-			assume edx:PTR NMLVDISPINFOW
-			mov ebx, offset Files
-			mov eax, sizeof FileInfo
-			mul [edx].item.iItem
-			add ebx, eax
-			assume ebx:PTR FileInfo
-			.if [edx].item.iSubItem == 0
-				lea ecx, [ebx]
-				mov [edx].item.pszText, ecx
-			.elseif [edx].item.iSubItem == 1
-				invoke wsprintfW, addr [edx].item.pszText, offset d_fmt, [ebx].filesize 
-			.endif
-		.endif
-
-	assume ebx:nothing
-	assume edx:nothing
-
-	ret
-handleListViewNotify endp
 
 
 
@@ -698,20 +680,20 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			invoke SelectDir, hWnd
 			invoke FindFile
 		.elseif eax == IDC_PLAYBTN
-			
+			invoke handlePlay, hWnd
 		.elseif eax == IDC_STOPBTN
-			
+			mov status.operation, STOPPLAY
 		.endif
 
 	.elseif uMsg == WM_PAINT
 		invoke BeginPaint, hWnd, ADDR ps 
 		invoke EndPaint, hWnd, ADDR ps 
 	.elseif uMsg == WM_NOTIFY
-		mov eax, DWORD PTR [wParam]
-		and eax, 0ffffh
-		.if eax == IDC_LISTVIEW
-			 invoke handleListViewNotify, lParam;bug待解决
-		.endif
+		;mov eax, DWORD PTR [wParam]
+		;and eax, 0ffffh
+		;.if eax == IDC_LISTVIEW
+		;	 invoke handleListViewNotify, lParam;bug待解决
+		;.endif
 
 	; 创建控件
 	.elseif uMsg == WM_CREATE
