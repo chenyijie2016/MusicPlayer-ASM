@@ -562,8 +562,7 @@ L_while:
 	.elseif status.operation == STARTPLAY
 		mov status.operation, NONEPLAY
 		invoke wsprintfW, addr cmd, offset startplay_fmt, offset DIR, addr status.filename
-		invoke SendMessage, hwndEdit, WM_SETTEXT, 0, addr cmd
-		mov ecx, offset cmd
+		invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr cmd
 		mov mop.lpstrElementName, offset cmd
 		invoke mciSendCommandW, NULL, MCI_OPEN, MCI_OPEN_ELEMENT, addr mop
 		mov return, eax
@@ -639,14 +638,12 @@ FindFile proc
 	invoke FindFirstFileW, addr tempdir, addr ffd
 	mov hFind, eax
 
-	invoke wsprintfW, addr Info, addr tempdir
-	invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
 	.if hFind == -1
 		ret ; error!
 	.endif
 	mov FileCount, 0
 
-	invoke SendMessage, hwndEdit, WM_SETTEXT, 0, addr tempdir
+	invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr tempdir
 	invoke SendMessage, hList, LB_RESETCONTENT, 0, 0
 
 	do_start:
@@ -706,11 +703,6 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		invoke BeginPaint, hWnd, ADDR ps 
 		invoke EndPaint, hWnd, ADDR ps 
 	.elseif uMsg == WM_NOTIFY
-		;mov eax, DWORD PTR [wParam]
-		;and eax, 0ffffh
-		;.if eax == IDC_LISTVIEW
-		;	 invoke handleListViewNotify, lParam;bug待解决
-		;.endif
 
 	; 创建控件
 	.elseif uMsg == WM_CREATE
