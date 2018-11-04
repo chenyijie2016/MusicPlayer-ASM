@@ -476,7 +476,7 @@ SelectDir proc hWnd:HWND
 	invoke SHGetPathFromIDListW ,lpDlist, offset DIR
 	;mov ecx, offset DIR
 returnselectdir:	
-	ret
+	ret 40
 SelectDir endp
 
 
