@@ -86,6 +86,7 @@ text_play db "Play", 0
 text_stop db "Stop", 0
 text_pause db "Pause", 0
 text_resume db "Resume", 0
+text_repeat db "单曲循环", 0
 text_edit db "edit",0
 text_opendir db "Open Directory", 0
 text_browse_folder db "Browse folder", 0
@@ -119,6 +120,8 @@ IDC_TOTALPLAYTIME HMENU 210
 IDC_STOPBTN HMENU 211
 IDC_PROGRESSBAR HMENU 212
 IDC_LIST HMENU 213
+IDC_REPEATE HMENU 213
+
 .data?
 hInstance HINSTANCE ?
 CommandLine LPSTR ? 
@@ -134,6 +137,7 @@ hStopBtn HWND ?
 hTotalPlayTime HWND ?
 hCurrentPlayTime HWND ?
 hList HWND ?
+hRepeatBtn HWND ?
 
 ; 当前目录
 DIR WCHAR 1024 DUP(0)
@@ -251,6 +255,15 @@ CreateWindowControl proc uses eax hWnd:HWND
 	mov hStopBtn, eax
 
 	invoke SendMessage, hStopBtn, WM_SETFONT, hFont, NULL
+
+	;创建repeat复选框
+	invoke CreateWindowEx, 0, offset text_button, offset text_repeat, 
+		WS_VISIBLE or WS_CHILD or BS_AUTOCHECKBOX or BS_LEFT,
+		0, 0, 0, 0,
+		hWnd, IDC_REPEATE, hInstance, NULL
+	mov hRepeatBtn, eax
+
+	invoke SendMessage, hRepeatBtn, WM_SETFONT, hFont, NULL
 
 	; 创建进度条
 	invoke CreateWindowEx, 0, offset PROGRESSCLASS, NULL ,
@@ -405,6 +418,29 @@ ReSizeWindowControl proc uses eax ebx hWnd:HWND
 
 
 	invoke MoveWindow, hStopBtn, middle, playBtn_bottom, 60, 30, TRUE
+
+	; 确定 repeat 按钮的位置
+	mov eax, 0 
+	invoke GetClientRect, hWnd, addr rc
+	mov ebx, rc.right
+	sub ebx, rc.left
+	mov current_width, ebx ; current_width =  rc.right - rc.left
+	mov eax, current_width
+	mov ebx, 2
+	mov dx, 0
+	div ebx
+	mov middle, eax ;middle = current_width /2
+	add middle, 80
+
+	mov ebx, rc.bottom
+	sub ebx, rc.top
+	mov current_height, ebx
+	mov eax, rc.bottom
+	mov playBtn_bottom, eax
+	sub playBtn_bottom, 40
+
+
+	invoke MoveWindow, hRepeatBtn, middle, playBtn_bottom, 90, 30, TRUE
 
 	; 确定进度条的位置
 	mov eax, rc.left
@@ -626,6 +662,10 @@ L_while:
 		invoke SetWindowText, hCurrentPlayTime, offset stopplay_fmt
 		invoke SetWindowText, hPlayBtn, offset text_play
 		invoke SendMessage, hwndPB, PBM_SETPOS, 0, 0
+		invoke SendMessage, hRepeatBtn, BM_GETCHECK, 0, 0
+		.if eax == BST_CHECKED
+			invoke handlePlay, NULL
+		.endif
 		ret
 	.elseif status.operation == RESUMEPLAY
 		mov status.operation, NONEPLAY
@@ -716,6 +756,10 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 		.elseif eax == IDC_PLAYBTN
 			invoke handlePlay, hWnd
 		.elseif eax == IDC_STOPBTN
+			invoke SendMessage, hRepeatBtn, BM_GETCHECK, 0, 0
+			.if eax == BST_CHECKED
+				invoke SendMessage, hRepeatBtn, BM_SETCHECK, 0, 0
+			.endif
 			mov status.operation, STOPPLAY
 		.endif
 
