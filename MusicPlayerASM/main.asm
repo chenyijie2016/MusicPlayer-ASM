@@ -17,6 +17,7 @@ include oleaut32.inc
 include msvcrt.inc
 include winmm.inc
 include shfolder.inc
+include dnslib.inc
 ;include C:\masm32\macros\macros.asm
 
 ;     libraries
@@ -33,6 +34,7 @@ includelib winmm.lib
 
 WinMain proto:DWORD, :DWORD, :DWORD, :DWORD
 InitInstance proto:HINSTANCE,:DWORD
+Play proto: LPVOID
 
 
 
@@ -44,6 +46,33 @@ FileInfo ends
 
 Files FileInfo 1024 DUP(<>)
 
+;typedef enum PlayOperation
+NONEPLAY equ 0
+STOPPLAY equ 1
+RESUMEPLAY equ 2
+PAUSEPLAY equ 3
+STARTPLAY equ 4
+;typedef enum PlayOperation
+
+;typedef enum PlayStatus
+STOPSTATUS equ 0
+PLAYSTATUS equ 1
+PAUSESTATUS equ 2
+;typedef enum PlayStatus
+
+Status struct
+	filename WCHAR 256 DUP(?)
+	wIdDevice MCIDEVICEID ?
+	playStatus dword ?
+	operation dword ?
+	pos dword ?
+	len dword ?
+Status ends
+
+status Status <>
+
+cmd WCHAR 300 DUP(?)
+
 
 szWindowClass db "MusicPlayer",0
 szTitle db "MusicPlayer",0
@@ -53,7 +82,10 @@ szTextFileSize db "FileSize",0
 
 fontname db 'C', 0, 'o', 0, 'n', 0, 's', 0, 'o', 0, 'l', 0, 'a', 0, 's', 0, 0, 0 ; Consolas
 text_button db "button", 0
-text_play db "play", 0
+text_play db "Play", 0
+text_stop db "Stop", 0
+text_pause db "Pause", 0
+text_resume db "Resume", 0
 text_edit db "edit",0
 text_opendir db "Open Directory", 0
 text_browse_folder db "Browse folder", 0
@@ -61,10 +93,15 @@ text_browse_folder db "Browse folder", 0
 
 
 find_dir_fmt db '%', 0, 's', 0, '\', '*',0, 0, 0; "%s\\*"
+handle_play_fmt db 'C', 0, 'o', 0, 'u', 0, 'n', 0, 't', 0, '=', 0, '%', 0, 'd', 0, ' ', 0, 'M', 0, 'a', 0, 'r', 0, 'k', 0, '=', 0, '%', 0, 'd', 0, 0, 0;"Count=%d Mark=%d"
 s_fmt db '%',0,'s',0, 0, 0 ;"%s"
 d_fmt db '%', 0, 'd', 0, 0, 0
+noneplay_fmt db '%', 0, '.', 0, '2', 0, 'd', 0, ':', 0, '%', 0, '.', 0, '2', 0, 'd', 0, 0, 0 ;"%.2d:%.2d"
+startplay_fmt db '%', 0, 's', 0, '\', 0, '%', 0, 's', 0, 0, 0 ;"%s\\%s"
+stopplay_fmt db '0', 0, '0', 0, ':', 0, '0', 0, '0', 0, 0, 0;"00:00"
 PROGRESSCLASS db "msctls_progress32",0
 LISTVIEWCLASS db "SysListView32",0
+music_file_error db 'O', 0, 'p', 0, 'e', 0, 'n', 0, ' ', 0, 'M', 0, 'u', 0, 's', 0, 'i', 0, 'c', 0, 'F', 0, 'i', 0, 'l', 0, 'e', 0, 'E', 0, 'r', 0, 'r', 0, 'o', 0, 'r', 0, '!', 0, 0, 0 ;"Open Music File Error!\r\nPlease Check the Media file!\r\nOr Your Audio decoder can not decode the file"
 
 text_static db "static",0
 text_0000 db "00:00",0
@@ -95,7 +132,7 @@ hTotalPlayTime HWND ?
 hCurrentPlayTime HWND ?
 
 DIR WCHAR 1024 DUP(0)
-Info WCHAR 1024 DUP(?)
+Info WCHAR 2048 DUP(?)
 
 
 .code
@@ -197,6 +234,13 @@ CreateWindowControl proc uses eax hWnd:HWND
 		0, 0, 0, 0,
 		hWnd, IDC_PLAYBTN, hInstance, NULL
 	mov hPlayBtn, eax
+
+	;创建stop按钮
+	;invoke CreateWindowEx, 0, offset text_button, offset text_stop, 
+		;WS_VISIBLE or WS_CHILD or BS_PUSHBUTTON,
+		;0, 0, 0, 0,
+		;hWnd, IDC_PLAYBTN, hInstance, NULL
+	;mov hPlayBtn, eax
 
 	invoke SendMessage, hPlayBtn, WM_SETFONT, hFont, NULL
 	; 创建进度条
@@ -390,6 +434,134 @@ SelectDir proc hWnd:HWND
 returnselectdir:	
 	ret
 SelectDir endp
+
+
+
+handlePlay proc uses eax ebx ecx, hWnd:HWND 
+	local count: dword
+	local mark: dword
+	local ThreadID: dword
+	local handle: HANDLE
+	invoke SendMessage, hListView, LVM_GETSELECTEDCOUNT, 0, 0
+	mov count, eax
+	invoke SendMessage, hListView, LVM_GETSELECTIONMARK, 0, 0
+	mov mark, eax
+
+	invoke wsprintfW, addr Info, offset handle_play_fmt, count, mark
+	invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
+
+	.if count == 1
+		.if status.playStatus == STOPSTATUS
+			mov ebx, offset Files
+			mov eax, sizeof FileInfo
+			mul mark
+			add ebx, eax
+			assume ebx:PTR FileInfo
+
+			mov status.operation, STARTPLAY
+			invoke wcscpy, offset status.filename, [ebx].filename
+			invoke CreateThread, NULL, 0, Play, NULL, 0, addr ThreadID
+			mov handle, eax
+			assume ebx:nothing
+		.endif
+	.endif
+
+	.if status.playStatus == PLAYSTATUS
+		mov status.operation, PAUSEPLAY
+	.elseif status.playStatus == PAUSESTATUS
+		mov status.operation, RESUMEPLAY
+	.endif
+
+	ret
+handlePlay endp
+
+Play proc uses eax ebx edx, lpParam: LPVOID
+	local return:dword
+	local mop:MCI_OPEN_PARMSW
+	local mpp:MCI_PLAY_PARMS
+	local msp:MCI_STATUS_PARMS
+	local currentTime[30]: WCHAR
+	local totalTime[30]: WCHAR
+L_while:
+	.if status.operation == NONEPLAY
+		mov msp.dwItem, MCI_STATUS_POSITION
+		invoke mciSendCommandW, mop.wDeviceID, MCI_STATUS, MCI_STATUS_ITEM, addr msp
+		mov eax, msp.dwReturn
+		mov status.pos, eax
+		mov ebx, 100
+		div ebx
+		invoke SendMessage, hwndPB, PBM_SETPOS, eax, 0
+		mov eax, status.pos
+		mov ebx, 1000
+		div ebx
+		mov ebx, 60
+		div ebx
+		invoke wsprintfW, addr currentTime, offset noneplay_fmt, eax, edx
+		invoke SetWindowTextW, hCurrentPlayTime, addr currentTime
+		mov eax, status.len
+		.if status.pos == eax
+			mov eax, STOPPLAY
+			mov status.operation, eax
+		.endif
+
+	.elseif status.operation == STARTPLAY
+		mov status.operation, NONEPLAY
+		invoke wsprintfW, addr cmd, offset startplay_fmt, offset DIR, status.filename
+		invoke SendMessage, hwndEdit, WM_SETTEXT, 0, addr cmd
+		mov mop.lpstrElementName, offset cmd
+		invoke mciSendCommandW, NULL, MCI_OPEN, MCI_OPEN_ELEMENT, addr mop
+		mov return, eax
+		.if return != 0
+			invoke wsprintfW, addr Info, offset music_file_error
+			invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
+			ret
+		.endif
+
+		mov mpp.dwFrom, 0
+		mov mpp.dwCallback, NULL
+		invoke mciSendCommandW, mop.wDeviceID, MCI_PLAY, MCI_NOTIFY, addr mpp
+		mov msp.dwItem, MCI_STATUS_LENGTH
+		invoke mciSendCommandW, mop.wDeviceID, MCI_STATUS, MCI_STATUS_ITEM, addr msp
+		mov eax, msp.dwReturn
+		mov status.len, eax
+		;SendMessage(hwndPB, PBM_SETRANGE, 0, MAKELPARAM(0, status.length / 100)) 待翻译
+		mov eax, status.len
+		mov ebx, 1000
+		div ebx
+		mov ebx, 60
+		div ebx
+		invoke wsprintfW, addr totalTime, offset noneplay_fmt, eax, edx
+		invoke SetWindowTextW, hTotalPlayTime, addr totalTime
+		mov status.playStatus, PLAYSTATUS
+		invoke SetWindowTextW, hPlayBtn, offset text_pause
+
+	.elseif status.operation == PAUSEPLAY
+		mov status.operation, NONEPLAY
+		mov status.playStatus, PAUSESTATUS
+		invoke SetWindowTextW, hPlayBtn, offset text_resume
+		invoke mciSendCommandW, mop.wDeviceID, MCI_PAUSE, 0, addr mpp
+	
+	.elseif status.operation == STOPPLAY
+		invoke mciSendCommandW, mop.wDeviceID, MCI_STOP, 0, addr mpp
+		invoke mciSendCommandW, mop.wDeviceID, MCI_CLOSE, NULL, NULL
+		mov status.playStatus, STOPSTATUS
+		mov status.operation, NONEPLAY
+		invoke SetWindowTextW, hTotalPlayTime, offset stopplay_fmt
+		invoke SetWindowTextW, hCurrentPlayTime, offset stopplay_fmt
+		invoke SetWindowTextW, hPlayBtn, offset text_play
+		invoke SendMessage, hwndPB, PBM_SETPOS, 0, 0
+	.elseif status.operation == RESUMEPLAY
+		mov status.operation, NONEPLAY
+		mov status.playStatus, PLAYSTATUS
+		invoke SetWindowTextW, hPlayBtn, offset text_pause
+		invoke mciSendCommandW, mop.wDeviceID, MCI_RESUME, 0, addr mpp
+	.endif
+
+	invoke Sleep, 100
+	jmp L_while
+
+	;ret
+Play endp
 
 
 
