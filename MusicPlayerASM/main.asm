@@ -102,8 +102,9 @@ startplay_fmt db '%', 0, 's', 0, '\', 0, '%', 0, 's', 0, 0, 0 ;"%s\\%s"
 stopplay_fmt db '00:00', 0;"00:00"
 PROGRESSCLASS db "msctls_progress32",0
 LISTVIEWCLASS db "SysListView32",0
-;music_file_error db 'O', 0, 'p', 0, 'e', 0, 'n', 0, ' ', 0, 'M', 0, 'u', 0, 's', 0, 'i', 0, 'c', 0, 'F', 0, 'i', 0, 'l', 0, 'e', 0, 'E', 0, 'r', 0, 'r', 0, 'o', 0, 'r', 0, '!', 0, 0, 0 ;"Open Music File Error!\r\nPlease Check the Media file!\r\nOr Your Audio decoder can not decode the file"
-music_file_error db 'Open Music File Error!', 'Please Check the Media file!', 'Or Your Audio decoder can not decode the file', 0 ;"Open Music File Error!\r\nPlease Check the Media file!\r\nOr Your Audio decoder can not decode the file"
+music_file_error db "Open Music File Error!",0dh,0ah 
+                 db "Please Check the Media file!", 0dh,0ah 
+				 db  "Or Your Audio decoder can not decode the file!", 0
 
 text_static db "static",0
 text_0000 db "00:00",0
@@ -570,8 +571,6 @@ L_while:
 		invoke mciSendCommandW, NULL, MCI_OPEN, MCI_OPEN_ELEMENT, addr mop
 		mov return, eax
 		.if return != 0
-			;invoke wsprintfW, addr Info, offset music_file_error
-			;invoke SendMessageW, hwndEdit, WM_SETTEXT, 0, addr Info
 			invoke SendMessage, hwndEdit, WM_SETTEXT, 0, offset music_file_error
 			ret
 		.endif
